@@ -14,36 +14,49 @@ import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.server.ServerWebInputException
+import org.springframework.http.converter.HttpMessageNotReadableException
 
 @RestControllerAdvice
 class GlobalControllerExceptionHandler() {
 
     private val logger = LoggerFactory.getLogger(javaClass)
 
-
     @ExceptionHandler(ProductNotFoundException::class)
     fun handleContentNotFoundException(exception: ProductNotFoundException): ResponseEntity<ErrorResponse> {
-        val errorResponse = ErrorResponse(HttpStatus.BAD_GATEWAY.value().toString(), exception.message)
+        val errorResponse = ErrorResponse(HttpStatus.NOT_FOUND.value().toString(), exception.message)
         logger.error("ProductNotFoundException : $exception")
-        return ResponseEntity(errorResponse, HttpStatus.BAD_GATEWAY)
+        return ResponseEntity(errorResponse, HttpStatus.NOT_FOUND)
     }
 
     @ExceptionHandler(ReviewNotFoundException::class)
     fun handleContentNotFoundException(exception: ReviewNotFoundException): ResponseEntity<ErrorResponse> {
-        val errorResponse = ErrorResponse(HttpStatus.BAD_GATEWAY.value().toString(), exception.message)
+        val errorResponse = ErrorResponse(HttpStatus.NOT_FOUND.value().toString(), exception.message)
         logger.error("ReviewNotFoundException : $exception")
-        return ResponseEntity(errorResponse, HttpStatus.BAD_GATEWAY)
+        return ResponseEntity(errorResponse, HttpStatus.NOT_FOUND)
     }
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleMethodArgumentNotValidException(exception: MethodArgumentNotValidException): ResponseEntity<ErrorResponse> {
-        val errorResponse = ErrorResponse(exception = "MethodArgumentNotValidException")
+        val errorResponse = ErrorResponse(exception = "Validation Error")
+        exception.bindingResult.fieldErrors.forEach { fieldError ->
+            errorResponse.addError(ErrorDetailResponse(fieldError.field, fieldError.defaultMessage ?: "Invalid value"))
+        }
+        logger.error("Field validation failed. Caused By:{}", exception)
+        return ResponseEntity(errorResponse, HttpStatus.BAD_REQUEST)
+    }
+
+    @ExceptionHandler(BindException::class)
+    fun handleBindException(exception: BindException): ResponseEntity<ErrorResponse> {
+        val errorResponse = ErrorResponse(exception = "Validation Error")
+        exception.bindingResult.fieldErrors.forEach { fieldError ->
+            errorResponse.addError(ErrorDetailResponse(fieldError.field, fieldError.defaultMessage ?: "Invalid value"))
+        }
         logger.error("Field validation failed. Caused By:{}", exception)
         return ResponseEntity(errorResponse, HttpStatus.BAD_REQUEST)
     }
 
     @ExceptionHandler(IllegalArgumentException::class)
-    fun handleIIllegalArgumentException(exception: IllegalArgumentException): ResponseEntity<ErrorResponse> {
+    fun handleIllegalArgumentException(exception: IllegalArgumentException): ResponseEntity<ErrorResponse> {
         val errorResponse = ErrorResponse(exception = "IllegalArgumentException")
         errorResponse.addError(ErrorDetailResponse(message = exception.message!!))
         logger.error("IllegalArgumentException Caused by: {}", exception)
@@ -64,6 +77,14 @@ class GlobalControllerExceptionHandler() {
         return ResponseEntity(errorResponse, HttpStatus.BAD_REQUEST)
     }
 
+    @ExceptionHandler(HttpMessageNotReadableException::class)
+    fun handleHttpMessageNotReadableException(exception: HttpMessageNotReadableException): ResponseEntity<ErrorResponse> {
+        val errorResponse = ErrorResponse(exception = "HttpMessageNotReadableException")
+        errorResponse.addError(ErrorDetailResponse(message = "Invalid JSON input: ${exception.message}"))
+        logger.error("HttpMessageNotReadableException. Caused by: ", exception)
+        return ResponseEntity(errorResponse, HttpStatus.BAD_REQUEST)
+    }
+
     @ExceptionHandler(value = [java.lang.Exception::class, RuntimeException::class, Exception::class])
     fun handleGenericException(exception: Exception): ResponseEntity<ErrorResponse> {
         val errorResponse = ErrorResponse(exception = "Exception")
@@ -74,13 +95,5 @@ class GlobalControllerExceptionHandler() {
             ExceptionUtils.getStackTrace(exception)
         )
         return ResponseEntity(errorResponse, HttpStatus.INTERNAL_SERVER_ERROR)
-    }
-
-
-
-    private fun getKey(exception: BindException): String {
-        val errors = exception.bindingResult.allErrors
-        if (errors.isNotEmpty()) return errors.joinToString(",") { it.defaultMessage ?: "" }
-        return ""
     }
 }
